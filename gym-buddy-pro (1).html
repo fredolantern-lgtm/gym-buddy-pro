@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gym Buddy Pro — Carnet d'entraînement</title>
+<!--
+  GYM BUDDY PRO — carnet d'entraînement autonome
+  Enregistre tes séances, chrono de repos automatique, records (1RM), stats.
+  Tes données restent dans ton navigateur (localStorage).
+  Pense à faire des exports JSON réguliers depuis l'onglet Profil.
+-->
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.production.min.js"></script>
+<style>
+  body { margin: 0; background: #020617; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="root">Chargement de Gym Buddy Pro…</div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useRef } = React;
+const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line } = Recharts;
+
+/* ============================ Bibliothèque ============================ */
+
+const LIBRARY = [
+  ["Développé couché", "Pectoraux"], ["Développé couché haltères", "Pectoraux"],
+  ["Développé incliné barre", "Pectoraux"], ["Développé incliné haltères", "Pectoraux"],
+  ["Développé décliné", "Pectoraux"], ["Écarté haltères", "Pectoraux"],
+  ["Écarté poulie vis-à-vis", "Pectoraux"], ["Cross-over", "Pectoraux"],
+  ["Pompes", "Pectoraux"], ["Pompes lestées", "Pectoraux"], ["Pull-over haltère", "Pectoraux"],
+  ["Presse à pectoraux machine", "Pectoraux"], ["Dips (version pectoraux)", "Pectoraux"],
+  ["Tractions", "Dos"], ["Tractions lestées", "Dos"], ["Tirage vertical prise large", "Dos"],
+  ["Tirage vertical prise neutre", "Dos"], ["Rowing barre", "Dos"], ["Rowing haltère", "Dos"],
+  ["Rowing poulie basse", "Dos"], ["Rowing assis machine", "Dos"], ["Tirage horizontal", "Dos"],
+  ["Soulevé de terre", "Dos"], ["Soulevé de terre roumain", "Dos"], ["Soulevé de terre sumo", "Dos"],
+  ["Shrugs barre", "Dos"], ["Pull-over poulie haute", "Dos"],
+  ["Développé militaire", "Épaules"], ["Développé haltères épaules", "Épaules"],
+  ["Développé Arnold", "Épaules"], ["Élévations latérales", "Épaules"],
+  ["Élévations frontales", "Épaules"], ["Oiseau", "Épaules"], ["Face pull", "Épaules"],
+  ["Élévations latérales poulie", "Épaules"], ["Presse à épaules machine", "Épaules"],
+  ["Curl barre", "Biceps"], ["Curl haltères", "Biceps"], ["Curl marteau", "Biceps"],
+  ["Curl poulie", "Biceps"], ["Curl incliné", "Biceps"], ["Tractions prise supination", "Biceps"],
+  ["Extension poulie haute", "Triceps"], ["Barre au front", "Triceps"], ["Dips", "Triceps"],
+  ["Extension haltère overhead", "Triceps"], ["Pushdown corde", "Triceps"], ["Extensions banc", "Triceps"],
+  ["Squat", "Jambes"], ["Front squat", "Jambes"], ["Hack squat", "Jambes"],
+  ["Presse à cuisses", "Jambes"], ["Squat bulgare", "Jambes"], ["Fentes marchées", "Jambes"],
+  ["Fentes haltères", "Jambes"], ["Goblet squat", "Jambes"], ["Leg extension", "Jambes"],
+  ["Leg curl", "Jambes"], ["Soulevé de terre jambes tendues", "Jambes"],
+  ["Mollets debout", "Jambes"], ["Mollets assis", "Jambes"], ["Sissy squat", "Jambes"],
+  ["Hip thrust", "Fessiers"], ["Pont fessier", "Fessiers"], ["Kick-back poulie", "Fessiers"],
+  ["Abduction machine", "Fessiers"], ["Good morning", "Fessiers"],
+  ["Crunch", "Abdos"], ["Relevés de jambes suspendu", "Abdos"], ["Planche", "Abdos"],
+  ["Russian twist", "Abdos"], ["Relevés de jambes au sol", "Abdos"],
+  ["Crunch à la poulie", "Abdos"], ["Wheel abdos", "Abdos"],
+  ["Kettlebell swing", "Full body"], ["Burpees", "Full body"], ["Clean and press", "Full body"],
+  ["Thrusters", "Full body"], ["Farmer walk", "Full body"], ["Battle rope", "Full body"],
+  ["Course à pied", "Cardio"], ["Fractionné running", "Cardio"], ["Vélo", "Cardio"],
+  ["Vélo intensité", "Cardio"], ["Natation", "Cardio"], ["Rameur", "Cardio"],
+  ["Corde à sauter", "Cardio"], ["Elliptique", "Cardio"], ["Marche rapide", "Cardio"],
+  ["Mobilité hanches", "Mobilité"], ["Mobilité épaules", "Mobilité"], ["Étirements généraux", "Mobilité"],
+  ["Mousseau (foam roller)", "Mobilité"], ["Yoga", "Mobilité"],
+];
+const EXERCISES = LIBRARY;
+
+const MUSCLE_COLORS = {
+  "Pectoraux": "#f97316", "Dos": "#38bdf8", "Épaules": "#a855f7", "Biceps": "#ec4899",
+  "Triceps": "#2dd4bf", "Jambes": "#34d399", "Fessiers": "#eab308", "Abdos": "#818cf8",
+  "Full body": "#f87171", "Cardio": "#60a5fa", "Mobilité": "#94a3b8",
+};
+
+/* ============================ Helpers ============================ */
+
+const KEY_SESSIONS = "carnet-pro-v1-sessions";
+const KEY_DRAFT = "carnet-pro-v2-draft";
+const KEY_PREFS = "carnet-pro-v1-prefs";
+const OLD_KEY = "carnet-entrainement-v1";
+
+function isoDaysAgo(days) {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+function epley(weight, reps) {
+  if (weight <= 0 || reps <= 0) return 0;
+  return Math.round(weight * (1 + reps / 30) * 10) / 10;
+}
+
+function sessionVolume(s) {
+  return s.exercises.reduce(
+    (sum, ex) => sum + ex.sets.filter((st) => !st.warmup).reduce((v, st) => v + st.reps * st.weight, 0), 0);
+}
+
+function exerciseVolume(ex) {
+  return ex.sets.filter((st) => !st.warmup).reduce((v, st) => v + st.reps * st.weight, 0);
+}
+
+function best1RM(ex) {
+  return Math.max(0, ...ex.sets.filter((st) => !st.warmup).map((st) => epley(st.weight, st.reps)));
+}
+
+function fmtDate(iso) {
+  return new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
+}
+
+function fmtShort(iso) {
+  return new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+}
+
+function mondayOf(d) {
+  const m = new Date(d);
+  m.setHours(0, 0, 0, 0);
+  m.setDate(m.getDate() - ((m.getDay() + 6) % 7));
+  return m;
+}
+
+function mmss(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+function beep() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.25, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    o.start();
+    o.stop(ctx.currentTime + 0.6);
+    setTimeout(() => ctx.close(), 800);
+  } catch (e) { /* audio indisponible */ }
+}
+
+function guessMuscle(name) {
+  const hit = EXERCISES.find(([n]) => n.toLowerCase() === name.toLowerCase());
+  return hit ? hit[1] : "Full body";
+}
+
+const TYPE_STYLES = {
+  musculation: { label: "Musculation", emoji: "🏋️", cls: "bg-orange-500/15 text-orange-400" },
+  cardio: { label: "Cardio", emoji: "🏃", cls: "bg-sky-500/15 text-sky-400" },
+  "mobilité": { label: "Mobilité", emoji: "🧘", cls: "bg-violet-500/15 text-violet-400" },
+};
+
+const inputCls =
+  "w-full rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30";
+
+const cardCls = "rounded-2xl border border-slate-700 bg-slate-800/70 p-4 shadow-sm";
+
+/* ============================ Démo ============================ */
+
+function demoSessions() {
+  const mk = (id, daysAgo, type, title, duration, rpe, exercises, distance, notes) => ({
+    id: id, date: isoDaysAgo(daysAgo), type: type, title: title,
+    duration: duration, rpe: rpe, exercises: exercises,
+    distance: distance || 0, notes: notes || "",
+  });
+  const ex = (name, muscle, ...sets) => ({
+    name: name, muscle: muscle,
+    sets: sets.map(([reps, weight, rir]) => ({ reps: reps, weight: weight, rir: rir, warmup: false })),
+  });
+  return [
+    mk("dm1", 1, "musculation", "Push — Pectoraux / Épaules", 70, 8, [
+      ex("Développé couché", "Pectoraux", [8, 80, 1], [8, 80, 0], [7, 80, 0]),
+      ex("Développé militaire", "Épaules", [10, 42.5, 2], [10, 42.5, 1]),
+      ex("Élévations latérales", "Épaules", [12, 10, 1], [12, 10, 0]),
+      ex("Extension poulie haute", "Triceps", [12, 25, 1], [12, 25, 0]),
+    ], 0, "Très bonne séance, nouveaux records !"),
+    mk("dm2", 3, "musculation", "Cardio + gainage", 40, 5, [
+      ex("Planche", "Abdos", [1, 0, null], [1, 0, null]),
+      ex("Russian twist", "Abdos", [20, 5, 1], [20, 5, 0]),
+    ]),
+    mk("dm3", 5, "musculation", "Legs", 75, 9, [
+      ex("Squat", "Jambes", [5, 115, 1], [5, 115, 1], [5, 115, 0], [4, 117.5, 0]),
+      ex("Soulevé de terre roumain", "Fessiers", [8, 90, 1], [8, 90, 0]),
+      ex("Leg curl", "Jambes", [12, 45, 1], [12, 45, 0]),
+      ex("Mollets debout", "Jambes", [15, 60, 1], [15, 60, 0]),
+    ]),
+    mk("dm4", 7, "cardio", "Sortie longue running", 75, 6, [], 12.5, "Rythme tranquille, 6'00/km."),
+    mk("dm5", 8, "musculation", "Pull — Dos / Biceps", 65, 7, [
+      ex("Tractions", "Dos", [8, 0, 1], [8, 0, 1], [7, 0, 0]),
+      ex("Rowing barre", "Dos", [10, 62.5, 1], [10, 62.5, 0]),
+      ex("Tirage vertical", "Dos", [12, 55, 1], [12, 55, 0]),
+      ex("Curl barre", "Biceps", [10, 32.5, 1], [10, 32.5, 0]),
+    ]),
+    mk("dm6", 12, "musculation", "Push — Pectoraux / Épaules", 70, 8, [
+      ex("Développé couché", "Pectoraux", [8, 77.5, 1], [8, 77.5, 1], [7, 77.5, 0]),
+      ex("Développé haltères épaules", "Épaules", [10, 40, 2], [10, 40, 1]),
+      ex("Extension poulie haute", "Triceps", [12, 22.5, 1], [12, 22.5, 0]),
+    ]),
+    mk("dm7", 15, "mobilité", "Mobilité + étirements", 30, 3, [
+      ex("Mobilité hanches", "Mobilité", [1, 0, null]),
+      ex("Étirements généraux", "Mobilité", [1, 0, null]),
+    ]),
+    mk("dm8", 17, "cardio", "Fractionné running", 40, 8, [], 7.2, "8 × 400 m, sensations top."),
+    mk("dm9", 19, "musculation", "Legs", 75, 8, [
+      ex("Squat", "Jambes", [5, 110, 1], [5, 110, 1], [5, 110, 0]),
+      ex("Presse à cuisses", "Jambes", [12, 180, 1], [12, 180, 0]),
+      ex("Hip thrust", "Fessiers", [10, 100, 1], [10, 100, 0]),
+    ]),
+    mk("dm10", 22, "musculation", "Full body", 60, 7, [
+      ex("Soulevé de terre", "Dos", [5, 120, 1], [5, 120, 0]),
+      ex("Développé couché haltères", "Pectoraux", [10, 30, 1], [10, 30, 0]),
+      ex("Kettlebell swing", "Full body", [15, 24, 1], [15, 24, 0]),
+    ]),
+    mk("dm11", 26, "cardio", "Vélo", 90, 5, [], 32, ""),
+    mk("dm12", 29, "musculation", "Push — Pectoraux / Épaules", 65, 7, [
+      ex("Développé couché", "Pectoraux", [8, 75, 1], [8, 75, 1], [7, 75, 0]),
+      ex("Développé haltères épaules", "Épaules", [10, 37.5, 2], [10, 37.5, 1]),
+    ]),
+    mk("dm13", 33, "musculation", "Legs", 70, 8, [
+      ex("Squat", "Jambes", [5, 105, 1], [5, 105, 1], [5, 105, 0]),
+    ]),
+    mk("dm14", 36, "cardio", "Course à pied", 45, 6, [], 8, ""),
+    mk("dm15", 40, "musculation", "Pull — Dos / Biceps", 65, 7, [
+      ex("Tractions", "Dos", [8, 0, 1], [7, 0, 1]),
+      ex("Rowing barre", "Dos", [10, 60, 1], [10, 60, 0]),
+    ]),
+    mk("dm16", 43, "musculation", "Push — Pectoraux / Épaules", 60, 7, [
+      ex("Développé couché", "Pectoraux", [8, 72.5, 1], [8, 72.5, 1], [7, 72.5, 0]),
+    ]),
+  ];
+}
+
+function emptyDraft() {
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    type: "musculation",
+    title: "",
+    rpe: 6,
+    notes: "",
+    exercises: [],
+    active: false,
+    pos: { ex: 0, set: 0 },
+    startedAt: null,
+  };
+}
+
+function migrateOldSession(s) {
+  if (!s || typeof s.date !== "string") return null;
+  const exercises = (s.exercises || []).map((e) => ({
+    name: e.name || "Exercice",
+    muscle: guessMuscle(e.name || ""),
+    sets: Array.from({ length: e.sets || 1 }, () => ({
+      reps: e.reps || 10, weight: e.weight || 0, rir: null, warmup: false,
+    })),
+  }));
+  return {
+    id: s.id || Date.now().toString(36), date: s.date,
+    type: s.type === "cardio" ? "cardio" : "musculation",
+    title: s.title || "Séance", duration: s.duration || 60, rpe: s.rpe || 6,
+    exercises: exercises, distance: s.distance || 0, notes: s.notes || "",
+  };
+}
+
+function loadSessions() {
+  try {
+    const raw = localStorage.getItem(KEY_SESSIONS);
+    if (raw) return { sessions: JSON.parse(raw), isDemo: false };
+    const old = localStorage.getItem(OLD_KEY);
+    if (old) {
+      const parsed = JSON.parse(old);
+      if (Array.isArray(parsed)) {
+        return { sessions: parsed.map(migrateOldSession).filter(Boolean), isDemo: false };
+      }
+    }
+  } catch (e) { /* stockage indisponible */ }
+  return { sessions: demoSessions(), isDemo: true };
+}
+
+/* ============================ App ============================ */
+
+function App() {
+  const initial = loadSessions();
+  const [sessions, setSessions] = useState(initial.sessions);
+  const [isDemo, setIsDemo] = useState(initial.isDemo);
+  const [tab, setTab] = useState("seance");
+  const [toast, setToast] = useState(null);
+
+  const [draft, setDraft] = useState(() => {
+    try {
+      const raw = localStorage.getItem(KEY_DRAFT);
+      if (raw) return Object.assign(emptyDraft(), JSON.parse(raw));
+    } catch (e) { /* noop */ }
+    return emptyDraft();
+  });
+
+  const [prefs, setPrefs] = useState(() => {
+    try {
+      const raw = localStorage.getItem(KEY_PREFS);
+      if (raw) return Object.assign({ restDefault: 90, goalSessions: 3, goalMinutes: 180 }, JSON.parse(raw));
+    } catch (e) { /* noop */ }
+    return { restDefault: 90, goalSessions: 3, goalMinutes: 180 };
+  });
+
+  const [rest, setRest] = useState(null);
+  useEffect(() => {
+    if (!rest) return;
+    if (rest.remaining <= 0) { beep(); setRest(null); return; }
+    const t = setTimeout(() => {
+      setRest((r) => (r && r.remaining > 0 ? { ...r, remaining: r.remaining - 1 } : null));
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [rest]);
+
+  useEffect(() => { try { localStorage.setItem(KEY_SESSIONS, JSON.stringify(sessions)); } catch (e) {} }, [sessions]);
+  useEffect(() => { try { localStorage.setItem(KEY_DRAFT, JSON.stringify(draft)); } catch (e) {} }, [draft]);
+  useEffect(() => { try { localStorage.setItem(KEY_PREFS, JSON.stringify(prefs)); } catch (e) {} }, [prefs]);
+
+  function notify(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
+  }
+
+  function startRest(seconds) {
+    const s = seconds != null ? seconds : prefs.restDefault;
+    setRest({ remaining: s, total: s });
+  }
+
+  function lastByExercise() {
+    const map = new Map();
+    [...sessions]
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .forEach((s) =>
+        s.exercises.forEach((ex) => {
+          const key = ex.name.toLowerCase();
+          if (!map.has(key)) {
+            const last = ex.sets.filter((st) => !st.warmup).at(-1);
+            if (last) map.set(key, { weight: last.weight, reps: last.reps, date: s.date, sets: ex.sets.length });
+          }
+        })
+      );
+    return map;
+  }
+
+  function saveSession(summary) {
+    const hasContent = draft.exercises.length > 0 || summary.distance > 0 || summary.notes.trim() !== "";
+    if (!hasContent) { notify("Ajoute au moins un exercice, une distance ou une note."); return; }
+    const session = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      date: draft.date,
+      type: draft.type,
+      title: draft.title.trim() || (draft.type === "cardio" ? "Séance cardio" : draft.type === "mobilité" ? "Mobilité" : "Séance musculation"),
+      duration: Math.max(1, summary.duration),
+      rpe: summary.rpe,
+      exercises: draft.exercises
+        .filter((ex) => ex.name.trim() !== "")
+        .map((ex) => Object.assign({}, ex, { sets: ex.sets.filter((st) => st.reps > 0) })),
+      distance: draft.type === "cardio" ? summary.distance : 0,
+      notes: summary.notes.trim(),
+    };
+
+    const prs = [];
+    for (const ex of session.exercises) {
+      const newBest = best1RM(ex);
+      if (newBest <= 0) continue;
+      const pastBest = Math.max(0, ...sessions
+        .filter((s) => s.exercises.some((e) => e.name.toLowerCase() === ex.name.toLowerCase()))
+        .flatMap((s) => s.exercises
+          .filter((e) => e.name.toLowerCase() === ex.name.toLowerCase())
+          .map(best1RM)));
+      if (newBest > pastBest) prs.push(ex.name + " (1RM est. " + newBest + " kg)");
+    }
+
+    setSessions((prev) => [...prev, session]);
+    setDraft(emptyDraft());
+    setIsDemo(false);
+    setTab("historique");
+    notify(prs.length > 0
+      ? "🎉 Séance enregistrée ! Records battus : " + prs.join(" · ")
+      : "✓ Séance enregistrée !");
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 pb-28 text-slate-100">
+      <header className="border-b border-slate-800 bg-gradient-to-r from-slate-900 to-slate-800">
+        <div className="mx-auto max-w-3xl px-4 py-5">
+          <h1 className="flex items-center gap-2 text-xl font-extrabold text-white">
+            <span className="text-2xl">💪</span> Gym Buddy Pro
+          </h1>
+          <p className="mt-0.5 text-xs font-medium text-emerald-400">PLUS FORT CHAQUE JOUR !</p>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-3xl px-4 py-5">
+        {isDemo && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+            <span>📖 Carnet de démonstration avec des séances d'exemple.</span>
+            <button
+              onClick={() => { setSessions([]); setIsDemo(false); }}
+              className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-slate-900 hover:bg-amber-400"
+            >
+              Repartir de zéro
+            </button>
+          </div>
+        )}
+
+        {tab === "seance" && (
+          <SessionTab
+            draft={draft}
+            setDraft={setDraft}
+            lastMap={lastByExercise()}
+            prefs={prefs}
+            rest={rest}
+            onRest={startRest}
+            onFinish={saveSession}
+            notify={notify}
+          />
+        )}
+        {tab === "exercices" && (
+          <ExercisesTab
+            sessions={sessions}
+            lastMap={lastByExercise()}
+            onAddToDraft={(name) => {
+              if (draft.active) {
+                const muscle = guessMuscle(name);
+                const last = lastByExercise().get(name.toLowerCase());
+                const sets = Array.from({ length: (last && last.sets) || 3 }, () => ({
+                  reps: (last && last.reps) || 10, weight: (last && last.weight) || 0, rir: null, warmup: false,
+                }));
+                setDraft((d) => Object.assign({}, d, { exercises: [...d.exercises, { name: name, muscle: muscle, sets: sets }] }));
+                notify("✓ " + name + " ajouté à la séance en cours");
+              } else {
+                notify("Démarrer une séance pour ajouter des exercices");
+              }
+            }}
+          />
+        )}
+        {tab === "historique" && (
+          <HistoryTab sessions={sessions} onDelete={(id) => setSessions((p) => p.filter((s) => s.id !== id))} />
+        )}
+        {tab === "profil" && (
+          <ProfileTab sessions={sessions} prefs={prefs} setPrefs={setPrefs} setSessions={setSessions} notify={notify} />
+        )}
+      </main>
+
+      {rest && (
+        <div className="fixed inset-x-0 bottom-[4.25rem] z-40 border-t border-emerald-400/30 bg-emerald-900/95 shadow-lg backdrop-blur">
+          <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-2.5">
+            <div className="text-2xl font-extrabold tabular-nums text-emerald-300">⏱ {mmss(rest.remaining)}</div>
+            <div className="flex-1">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-950">
+                <div className="h-full rounded-full bg-emerald-400 transition-all duration-1000"
+                  style={{ width: (rest.remaining / rest.total) * 100 + "%" }} />
+              </div>
+              <div className="mt-0.5 text-[10px] text-emerald-300/80">Repos en cours — prépare la prochaine série</div>
+            </div>
+            <button onClick={() => setRest({ ...rest, remaining: rest.remaining + 15, total: rest.total + 15 })} className="rounded-lg bg-emerald-700/50 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">+15s</button>
+            <button onClick={() => setRest(rest.remaining > 15 ? { ...rest, remaining: rest.remaining - 15 } : null)} className="rounded-lg bg-emerald-700/50 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">−15s</button>
+            <button onClick={() => setRest(null)} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-emerald-900 hover:bg-emerald-100">Skip</button>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-28 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-slate-100 px-5 py-3 text-sm font-bold text-slate-900 shadow-xl">
+          {toast}
+        </div>
+      )}
+
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-800 bg-slate-900/95 backdrop-blur">
+        <div className="mx-auto grid max-w-3xl grid-cols-4">
+          {[["seance", "🏋️", "Séance"], ["exercices", "📚", "Exercices"], ["historique", "📋", "Historique"], ["profil", "👤", "Profil"]].map(([key, icon, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={"relative flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-bold transition " +
+                (tab === key ? "text-emerald-400" : "text-slate-500 hover:text-slate-300")}
+            >
+              <span className="text-xl leading-none">{icon}</span>
+              {label}
+              {key === "seance" && draft.active && (
+                <span className="absolute right-4 top-2 h-2 w-2 rounded-full bg-emerald-400" />
+              )}
+            </button>
+          ))}
+        </div>
+      </nav>
+    </div>
+  );
+}
+
+/* ============================ Onglet Séance ============================ */
+
+function SessionTab(props) {
+  const { draft, setDraft, lastMap, prefs, rest, onRest, onFinish, notify } = props;
+
+  const totalSets = draft.exercises.reduce((n, ex) => n + ex.sets.length, 0);
+  const doneSets = draft.exercises.reduce((n, ex) => n + ex.sets.filter((st) => st.done).length, 0);
+  const allDone = draft.active && totalSets > 0 && doneSets === totalSets;
+
+  const [showSummary, setShowSummary] = useState(false);
+  useEffect(() => { if (allDone) setShowSummary(true); }, [allDone]);
+
+  if (!draft.active) {
+    return <SessionSetup draft={draft} setDraft={setDraft} lastMap={lastMap} prefs={prefs} notify={notify} />;
+  }
+  if (showSummary || (draft.type === "cardio" && draft.exercises.length === 0)) {
+    return (
+      <SummaryView
+        draft={draft}
+        doneSets={doneSets}
+        totalSets={totalSets}
+        onFinish={(s) => { setShowSummary(false); onFinish(s); }}
+        onCancel={() => setShowSummary(false)}
+      />
+    );
+  }
+  return (
+    <ActiveSession
+      draft={draft}
+      setDraft={setDraft}
+      doneSets={doneSets}
+      totalSets={totalSets}
+      rest={rest}
+      onRest={onRest}
+      onSummary={() => setShowSummary(true)}
+    />
+  );
+}
+
+/* ---------- Configuration de séance ---------- */
+
+function SessionSetup(props) {
+  const { draft, setDraft, lastMap, prefs, notify } = props;
+  const patch = (p) => setDraft((d) => Object.assign({}, d, p));
+  const [query, setQuery] = useState("");
+
+  function addExercise(name) {
+    const muscle = guessMuscle(name);
+    const last = lastMap.get(name.toLowerCase());
+    const n = (last && last.sets) || 4;
+    const sets = Array.from({ length: n }, () => ({
+      reps: (last && last.reps) || 10, weight: (last && last.weight) || 0, rir: null, warmup: false,
+    }));
+    setDraft((d) => Object.assign({}, d, { exercises: [...d.exercises, { name: name, muscle: muscle, sets: sets }] }));
+    setQuery("");
+  }
+
+  const q = query.trim().toLowerCase();
+  const results = q ? EXERCISES.filter(([n]) => n.toLowerCase().includes(q)).slice(0, 8) : EXERCISES.slice(0, 6);
+  const exact = EXERCISES.some(([n]) => n.toLowerCase() === q);
+
+  function start() {
+    if (draft.exercises.length === 0 && draft.type !== "cardio") {
+      notify("Ajoute au moins un exercice pour démarrer.");
+      return;
+    }
+    setDraft((d) => Object.assign({}, d, {
+      active: true,
+      pos: { ex: 0, set: 0 },
+      startedAt: Date.now(),
+      exercises: d.exercises.map((ex) => Object.assign({}, ex, { sets: ex.sets.map((st) => Object.assign({}, st, { done: false })) })),
+    }));
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className={cardCls}>
+        <p className="text-xs font-bold uppercase tracking-wider text-emerald-400">Nouvelle séance</p>
+        <div className="mt-3 flex gap-2">
+          {Object.keys(TYPE_STYLES).map((t) => (
+            <button
+              key={t}
+              onClick={() => patch({ type: t })}
+              aria-pressed={draft.type === t}
+              className={"flex-1 rounded-xl border px-3 py-2.5 text-xs font-bold transition " +
+                (draft.type === t
+                  ? "border-emerald-500 bg-emerald-500/15 text-emerald-400"
+                  : "border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-500")}
+            >
+              {TYPE_STYLES[t].emoji} {TYPE_STYLES[t].label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3">
+          <label htmlFor="titre-seance" className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Titre</label>
+          <input id="titre-seance" value={draft.title} onChange={(e) => patch({ title: e.target.value })}
+            placeholder="ex. Push — Pectoraux / Épaules" className={inputCls} />
+        </div>
+      </div>
+
+      {draft.type !== "cardio" && (
+        <div className={cardCls}>
+          <label htmlFor="search-setup" className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            🔎 Ajouter des exercices
+          </label>
+          <input id="search-setup" value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="Rechercher (ex. squat, rowing, curl…)" className={inputCls} list="ex-names-list" />
+          <datalist id="ex-names-list">{EXERCISES.map(([n]) => <option key={n} value={n} />)}</datalist>
+          {q && !exact && (
+            <button onClick={() => addExercise(query.trim())}
+              className="mt-2 w-full rounded-lg border border-dashed border-emerald-500/60 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-400 hover:bg-emerald-500/20">
+              ➕ Créer l'exercice personnalisé « {query.trim()} »
+            </button>
+          )}
+          <div className="mt-2 flex flex-wrap gap-2">
+            {results.map(([name, muscle]) => (
+              <button key={name} onClick={() => addExercise(name)}
+                className="rounded-full border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-emerald-500 hover:text-emerald-400">
+                {name} <span className="text-[10px] text-slate-500">{muscle}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {draft.exercises.length > 0 && (
+        <div className="space-y-2">
+          {draft.exercises.map((ex, i) => (
+            <div key={i} className="flex items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800/70 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: MUSCLE_COLORS[ex.muscle] || "#94a3b8" }} />
+                <div>
+                  <div className="text-sm font-bold text-white">{ex.name}</div>
+                  <div className="text-[10px] text-slate-400">
+                    {ex.sets.length} séries{ex.sets[0] && ex.sets[0].weight > 0 ? " · " + ex.sets[0].reps + " reps @ " + ex.sets[0].weight + " kg" : ""}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setDraft((d) => Object.assign({}, d, {
+                    exercises: d.exercises.map((e, idx) =>
+                      idx === i ? Object.assign({}, e, { sets: e.sets.slice(0, Math.max(1, e.sets.length - 1)) }) : e),
+                  }))}
+                  className="h-7 w-7 rounded-lg bg-slate-700 font-bold text-white hover:bg-slate-600">−</button>
+                <span className="w-4 text-center text-sm font-bold text-white">{ex.sets.length}</span>
+                <button
+                  onClick={() => setDraft((d) => Object.assign({}, d, {
+                    exercises: d.exercises.map((e, idx) =>
+                      idx === i ? Object.assign({}, e, { sets: [...e.sets, Object.assign({}, e.sets.at(-1) || { reps: 10, weight: 0, rir: null, warmup: false })] }) : e),
+                  }))}
+                  className="h-7 w-7 rounded-lg bg-slate-700 font-bold text-white hover:bg-slate-600">+</button>
+                <button
+                  onClick={() => setDraft((d) => Object.assign({}, d, { exercises: d.exercises.filter((_, idx) => idx !== i) }))}
+                  aria-label={"Retirer " + ex.name}
+                  className="ml-1 rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-500 hover:border-red-500/50 hover:text-red-400">🗑</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p className="text-center text-[11px] text-slate-500">
+        Repos entre séries : {prefs.restDefault} s (réglable dans Profil) · chrono automatique à chaque série validée
+      </p>
+
+      <button onClick={start}
+        className="w-full rounded-xl bg-emerald-500 px-5 py-4 text-base font-extrabold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 active:scale-[0.99]">
+        ▶ Démarrer la séance
+      </button>
+    </div>
+  );
+}
+
+/* ---------- Séance active (guidée) ---------- */
+
+function ActiveSession(props) {
+  const { draft, setDraft, doneSets, totalSets, rest, onRest, onSummary } = props;
+  const pos = draft.pos;
+  const ex = draft.exercises[pos.ex];
+  const set = ex && ex.sets[pos.set];
+  const pct = totalSets > 0 ? Math.round((doneSets / totalSets) * 100) : 0;
+
+  if (!ex || !set) {
+    return (
+      <div className="text-center">
+        <button onClick={onSummary} className="rounded-xl bg-emerald-500 px-5 py-3 font-extrabold text-slate-950">Voir le récapitulatif →</button>
+      </div>
+    );
+  }
+
+  function updateSet(p) {
+    setDraft((d) => Object.assign({}, d, {
+      exercises: d.exercises.map((e, i) =>
+        i === pos.ex ? Object.assign({}, e, { sets: e.sets.map((st, j) => (j === pos.set ? Object.assign({}, st, p) : st)) }) : e),
+    }));
+  }
+
+  function advance(d) {
+    const cur = d.exercises[d.pos.ex].sets;
+    if (d.pos.set < cur.length - 1) return { ex: d.pos.ex, set: d.pos.set + 1 };
+    if (d.pos.ex < d.exercises.length - 1) return { ex: d.pos.ex + 1, set: 0 };
+    return d.pos;
+  }
+
+  function validate() {
+    const isWarmup = set.warmup;
+    setDraft((d) => Object.assign({}, d, {
+      exercises: d.exercises.map((e, i) =>
+        i === pos.ex ? Object.assign({}, e, { sets: e.sets.map((st, j) => (j === pos.set ? Object.assign({}, st, { done: true }) : st)) }) : e),
+      pos: advance(d),
+    }));
+    onRest(isWarmup ? 30 : null);
+  }
+
+  function skip() {
+    setDraft((d) => Object.assign({}, d, { pos: advance(d) }));
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-slate-800 to-slate-800/60 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Séance du jour</p>
+            <h2 className="text-lg font-extrabold text-white">{draft.title || TYPE_STYLES[draft.type].label}</h2>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-extrabold text-emerald-400">{pct}%</div>
+            <div className="text-[10px] text-slate-400">{doneSets}/{totalSets} séries</div>
+          </div>
+        </div>
+        <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-700/60">
+          <div className="h-full rounded-full bg-emerald-400 transition-all duration-500" style={{ width: pct + "%" }} />
+        </div>
+        <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400">
+          <span>Exercice {pos.ex + 1}/{draft.exercises.length}</span>
+          {rest && <span className="font-bold text-emerald-400">⏱ Repos {mmss(rest.remaining)}</span>}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/70 p-5 shadow-lg">
+        <div className="flex items-center justify-between">
+          <span className="rounded-full px-2.5 py-0.5 text-[10px] font-bold text-white"
+            style={{ backgroundColor: MUSCLE_COLORS[ex.muscle] || "#94a3b8" }}>{ex.muscle}</span>
+          <span className="text-[10px] text-slate-400">Série {pos.set + 1}/{ex.sets.length}</span>
+        </div>
+        <h3 className="mt-2 text-xl font-extrabold text-white">{ex.name}</h3>
+
+        <div className="mt-3 space-y-1.5">
+          {ex.sets.map((st, j) => (
+            <div key={j} className={"flex items-center gap-2 rounded-lg px-3 py-2 text-sm " +
+              (j === pos.set ? "border border-emerald-500/50 bg-emerald-500/10" : st.done ? "bg-slate-700/40" : "bg-slate-800")}>
+              <span className={"flex h-5 w-5 items-center justify-center rounded text-[11px] font-bold " +
+                (st.done ? "bg-emerald-500 text-slate-950" : "bg-slate-700 text-slate-300")}>
+                {st.done ? "✓" : j + 1}
+              </span>
+              <span className={st.done ? "text-slate-400" : "font-semibold text-white"}>
+                {st.reps} reps × {st.weight > 0 ? st.weight + " kg" : "poids du corps"}
+              </span>
+              {st.warmup && <span className="text-[10px] font-bold text-amber-400">ÉCHAUFF.</span>}
+              {st.done && st.rir != null && <span className="ml-auto text-[10px] text-slate-400">RIR {st.rir}</span>}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-900/60 p-3">
+          <Stepper label="Reps" value={set.reps} step={1} min={0} onChange={(v) => updateSet({ reps: v })} />
+          <Stepper label="Charge (kg)" value={set.weight} step={2.5} min={0} onChange={(v) => updateSet({ weight: v })} />
+          <Stepper label="RIR" value={set.rir != null ? set.rir : 2} step={1} min={0} onChange={(v) => updateSet({ rir: v })} />
+        </div>
+
+        <div className="mt-3 flex gap-2">
+          <button onClick={() => updateSet({ warmup: !set.warmup })} aria-pressed={set.warmup}
+            className={"rounded-lg px-3 py-2 text-[11px] font-bold " + (set.warmup ? "bg-amber-500 text-slate-950" : "bg-slate-700 text-slate-300 hover:bg-slate-600")}>
+            🔥 Échauffement
+          </button>
+          <button onClick={skip} className="rounded-lg bg-slate-700 px-3 py-2 text-[11px] font-bold text-slate-300 hover:bg-slate-600">
+            Passer la série →
+          </button>
+        </div>
+
+        <button onClick={validate}
+          className="mt-4 w-full rounded-xl bg-emerald-500 px-5 py-4 text-base font-extrabold text-slate-950 shadow-lg shadow-emerald-500/25 transition hover:bg-emerald-400 active:scale-[0.99]">
+          ✓ Valider la série
+        </button>
+      </div>
+
+      <button onClick={onSummary}
+        className="w-full rounded-xl border border-slate-700 bg-slate-800 px-5 py-3 text-sm font-bold text-slate-300 hover:border-slate-500">
+        Terminer la séance →
+      </button>
+    </div>
+  );
+}
+
+function Stepper(props) {
+  const { label, value, onChange, step, min } = props;
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
+      <div className="flex items-center gap-1">
+        <button onClick={() => onChange(Math.max(min, +(value - step).toFixed(2)))}
+          aria-label={label + " moins"}
+          className="h-9 w-9 rounded-lg bg-slate-700 text-lg font-extrabold text-white hover:bg-slate-600">−</button>
+        <div className="w-14 text-center text-lg font-extrabold tabular-nums text-white">{value}</div>
+        <button onClick={() => onChange(+(value + step).toFixed(2))}
+          aria-label={label + " plus"}
+          className="h-9 w-9 rounded-lg bg-slate-700 text-lg font-extrabold text-white hover:bg-slate-600">+</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Récapitulatif ---------- */
+
+function SummaryView(props) {
+  const { draft, doneSets, totalSets, onFinish, onCancel } = props;
+  const elapsed = draft.startedAt ? Math.max(1, Math.round((Date.now() - draft.startedAt) / 60000)) : 60;
+  const [duration, setDuration] = useState(elapsed);
+  const [rpe, setRpe] = useState(draft.rpe);
+  const [notes, setNotes] = useState(draft.notes);
+  const [distance, setDistance] = useState(0);
+  const vol = draft.exercises.reduce((n, ex) => n + exerciseVolume(ex), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-emerald-500/30 bg-slate-800/70 p-5">
+        <h2 className="text-lg font-extrabold text-white">🏁 Séance terminée !</h2>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl bg-slate-900/60 p-3">
+            <div className="text-xl font-extrabold text-emerald-400">{doneSets}/{totalSets}</div>
+            <div className="text-[10px] text-slate-400">séries validées</div>
+          </div>
+          <div className="rounded-xl bg-slate-900/60 p-3">
+            <div className="text-xl font-extrabold text-emerald-400">{(vol / 1000).toFixed(1)} t</div>
+            <div className="text-[10px] text-slate-400">volume total</div>
+          </div>
+          <div className="rounded-xl bg-slate-900/60 p-3">
+            <div className="text-xl font-extrabold text-emerald-400">{draft.exercises.length}</div>
+            <div className="text-[10px] text-slate-400">exercices</div>
+          </div>
+        </div>
+        {draft.exercises.length > 0 && (
+          <ul className="mt-3 space-y-1 text-xs text-slate-300">
+            {draft.exercises.map((ex, i) => (
+              <li key={i} className="flex justify-between rounded-lg bg-slate-900/40 px-3 py-1.5">
+                <span className="font-semibold">{ex.name}</span>
+                <span className="text-slate-400">
+                  {ex.sets.filter((st) => st.done).length}/{ex.sets.length} séries
+                  {ex.sets.some((st) => st.weight > 0) && " · " + Math.max(...ex.sets.map((st) => st.weight)) + " kg max"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className={"space-y-4 " + cardCls}>
+        {draft.type === "cardio" && (
+          <div>
+            <label htmlFor="sum-dist" className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Distance (km)</label>
+            <input id="sum-dist" type="number" min={0} step="0.1" value={distance}
+              onChange={(e) => setDistance(Number(e.target.value))} className={inputCls} placeholder="ex. 8.5" />
+          </div>
+        )}
+        <div>
+          <label htmlFor="sum-duree" className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Durée (min)</label>
+          <input id="sum-duree" type="number" min={1} value={duration}
+            onChange={(e) => setDuration(Math.max(1, Number(e.target.value) || 1))} className={inputCls} />
+        </div>
+        <div>
+          <label htmlFor="sum-rpe" className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Difficulté ressentie : RPE {rpe}/10
+          </label>
+          <input id="sum-rpe" type="range" min={1} max={10} value={rpe}
+            onChange={(e) => setRpe(Number(e.target.value))} className="mt-2 w-full accent-emerald-500" />
+        </div>
+        <div>
+          <label htmlFor="sum-notes" className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Notes</label>
+          <textarea id="sum-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
+            placeholder="Sensations, douleurs, conditions…" className={inputCls} />
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        {doneSets < totalSets && (
+          <button onClick={onCancel}
+            className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3.5 text-sm font-bold text-slate-300 hover:border-slate-500">
+            ← Continuer
+          </button>
+        )}
+        <button onClick={() => onFinish({ duration: duration, rpe: rpe, notes: notes, distance: distance })}
+          className="flex-1 rounded-xl bg-emerald-500 px-5 py-3.5 text-base font-extrabold text-slate-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 active:scale-[0.99]">
+          ✓ Enregistrer la séance
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Onglet Exercices ============================ */
+
+function ExercisesTab(props) {
+  const { sessions, lastMap, onAddToDraft } = props;
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("Tous");
+
+  const q = query.trim().toLowerCase();
+  const muscles = ["Tous"].concat(Object.keys(MUSCLE_COLORS));
+  const list = EXERCISES.filter(([n, m]) =>
+    (filter === "Tous" || m === filter) && (!q || n.toLowerCase().includes(q)));
+
+  const practiced = new Set(sessions.flatMap((s) => s.exercises.map((e) => e.name.toLowerCase())));
+
+  return (
+    <div className="space-y-4">
+      <div className={cardCls}>
+        <input value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="🔎 Rechercher un exercice…" className={inputCls} />
+        <div className="mt-3 -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+          {muscles.map((m) => (
+            <button key={m} onClick={() => setFilter(m)}
+              className={"shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold transition " +
+                (filter === m ? "bg-emerald-500 text-slate-950" : "bg-slate-700 text-slate-300 hover:bg-slate-600")}>
+              {m}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {list.map(([name, muscle]) => {
+          const last = lastMap.get(name.toLowerCase());
+          return (
+            <div key={name} className="flex items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-800/70 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: MUSCLE_COLORS[muscle] }} />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-sm font-bold text-white">
+                    <span className="truncate">{name}</span>
+                    {practiced.has(name.toLowerCase()) && <span className="shrink-0 text-[9px] text-emerald-400">● pratiqué</span>}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    {muscle}
+                    {last ? " · dernier : " + last.reps + " reps @ " + last.weight + " kg (" + fmtShort(last.date) + ")" : " · jamais réalisé"}
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => onAddToDraft(name)}
+                aria-label={"Ajouter " + name + " à la séance"}
+                className="shrink-0 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-extrabold text-slate-950 hover:bg-emerald-400">
+                ➕ Ajouter
+              </button>
+            </div>
+          );
+        })}
+        {list.length === 0 && (
+          <p className="py-8 text-center text-sm text-slate-500">Aucun exercice trouvé.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Onglet Historique ============================ */
+
+function HistoryTab(props) {
+  const { sessions, onDelete } = props;
+  const [openId, setOpenId] = useState(null);
+
+  const sorted = [...sessions].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const grouped = useMemo(() => {
+    const map = new Map();
+    for (const s of sorted) {
+      const d = new Date(s.date + "T00:00:00");
+      const label = d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+      if (!map.has(label)) map.set(label, []);
+      map.get(label).push(s);
+    }
+    return Array.from(map.entries());
+  }, [sorted]);
+
+  return (
+    <div className="space-y-4">
+      <Heatmap sessions={sessions} />
+
+      {grouped.length === 0 && (
+        <p className="py-10 text-center text-sm text-slate-500">Aucune séance enregistrée pour l'instant.</p>
+      )}
+
+      {grouped.map(([month, list]) => (
+        <div key={month}>
+          <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-emerald-400">{month}</h3>
+          <div className="space-y-2">
+            {list.map((s) =>
+              openId === s.id ? (
+                <SessionDetail key={s.id} session={s}
+                  onClose={() => setOpenId(null)}
+                  onDelete={() => { setOpenId(null); onDelete(s.id); }} />
+              ) : (
+                <button key={s.id} onClick={() => setOpenId(s.id)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-800/70 px-4 py-3 text-left transition hover:border-slate-500">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="text-lg">{TYPE_STYLES[s.type] ? TYPE_STYLES[s.type].emoji : "🏋️"}</span>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-bold text-white">{s.title}</div>
+                        <div className="text-[10px] text-slate-400">{fmtDate(s.date)}</div>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right text-[10px] text-slate-400">
+                      <div className="font-bold text-emerald-400">{s.duration} min</div>
+                      <div>{s.type === "cardio" && s.distance > 0 ? s.distance + " km" : s.exercises.length + " ex. · RPE " + s.rpe}</div>
+                    </div>
+                  </div>
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SessionDetail(props) {
+  const { session, onClose, onDelete } = props;
+  return (
+    <div className="rounded-xl border border-emerald-500/40 bg-slate-800 p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-extrabold text-white">{session.title}</h3>
+          <p className="text-[10px] text-slate-400">{fmtDate(session.date)}</p>
+        </div>
+        <div className="flex gap-1.5">
+          <button onClick={onDelete} aria-label="Supprimer la séance"
+            className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-400 hover:border-red-500/60 hover:text-red-400">🗑</button>
+          <button onClick={onClose} aria-label="Fermer"
+            className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-400 hover:text-white">✕</button>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-4 gap-1.5 text-center">
+        <div className="rounded-lg bg-slate-900/60 py-2">
+          <div className="text-sm font-extrabold text-emerald-400">{session.duration}</div>
+          <div className="text-[9px] text-slate-400">min</div>
+        </div>
+        <div className="rounded-lg bg-slate-900/60 py-2">
+          <div className="text-sm font-extrabold text-emerald-400">{session.type === "cardio" ? session.distance : session.exercises.length}</div>
+          <div className="text-[9px] text-slate-400">{session.type === "cardio" ? "km" : "exercices"}</div>
+        </div>
+        <div className="rounded-lg bg-slate-900/60 py-2">
+          <div className="text-sm font-extrabold text-emerald-400">{sessionVolume(session) > 0 ? (sessionVolume(session) / 1000).toFixed(1) : "—"}</div>
+          <div className="text-[9px] text-slate-400">{sessionVolume(session) > 0 ? "tonnes" : "—"}</div>
+        </div>
+        <div className="rounded-lg bg-slate-900/60 py-2">
+          <div className="text-sm font-extrabold text-emerald-400">{session.rpe}/10</div>
+          <div className="text-[9px] text-slate-400">RPE</div>
+        </div>
+      </div>
+
+      {session.exercises.length > 0 && (
+        <div className="mt-3 space-y-1.5">
+          {session.exercises.map((ex, i) => (
+            <div key={i} className="rounded-lg bg-slate-900/40 px-3 py-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">{ex.name}</span>
+                <span className="text-[10px] text-slate-400">
+                  {best1RM(ex) > 0 ? "1RM est. " + best1RM(ex) + " kg" : ""}
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {ex.sets.map((st, j) => (
+                  <span key={j} className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " +
+                    (st.warmup ? "bg-amber-500/15 text-amber-400" : "bg-slate-700 text-slate-200")}>
+                    {st.reps}×{st.weight > 0 ? st.weight : "PC"}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {session.notes && (
+        <p className="mt-3 rounded-lg bg-slate-900/40 px-3 py-2 text-xs italic text-slate-300">📝 {session.notes}</p>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Heatmap 16 semaines ---------- */
+
+function Heatmap(props) {
+  const { sessions } = props;
+  const days = 16 * 7;
+  const byDate = new Map(sessions.map((s) => [s.date, s]));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = mondayOf(new Date(today.getTime() - (days - 1) * 86400000));
+
+  const cells = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start.getTime() + i * 86400000);
+    const iso = d.toISOString().slice(0, 10);
+    const s = byDate.get(iso);
+    cells.push({ iso: iso, date: d, session: s || null, future: d > today });
+  }
+
+  const weeks = [];
+  for (let w = 0; w < cells.length; w += 7) weeks.push(cells.slice(w, w + 7));
+
+  function intensity(s) {
+    if (!s) return 0;
+    const load = Math.min(10, s.rpe) * s.duration;
+    if (load >= 600) return 4;
+    if (load >= 400) return 3;
+    if (load >= 250) return 2;
+    return 1;
+  }
+  const cellColors = ["bg-slate-800", "bg-emerald-900", "bg-emerald-700", "bg-emerald-500", "bg-emerald-300"];
+  const monthLabels = weeks.map((w, i) =>
+    (i === 0 || w[0].date.getMonth() !== weeks[i - 1][0].date.getMonth())
+      ? w[0].date.toLocaleDateString("fr-FR", { month: "short" }) : "");
+
+  return (
+    <div className={cardCls}>
+      <h3 className="text-xs font-extrabold uppercase tracking-wider text-emerald-400">📈 Assiduité — 16 dernières semaines</h3>
+      <div className="mt-3 overflow-x-auto">
+        <div className="min-w-[420px]">
+          <div className="flex">
+            {monthLabels.map((m, i) => (
+              <div key={i} className="w-[14.28%] text-[9px] font-bold text-slate-500">{m}</div>
+            ))}
+          </div>
+          <div className="mt-1 flex gap-[3px]">
+            {weeks.map((w, wi) => (
+              <div key={wi} className="flex flex-1 flex-col gap-[3px]">
+                {w.map((c) => (
+                  <div key={c.iso} title={c.iso + (c.session ? " — " + c.session.title : "")}
+                    className={"h-3.5 w-full rounded-sm " + (c.future ? "bg-slate-900/50" : cellColors[intensity(c.session)])} />
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[9px] text-slate-500">
+            <span>{sessions.length} séances enregistrées</span>
+            <span className="flex items-center gap-1">
+              Moins
+              {cellColors.map((c, i) => <span key={i} className={"inline-block h-2.5 w-2.5 rounded-sm " + c} />)}
+              Plus
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Onglet Profil ============================ */
+
+function ProfileTab(props) {
+  const { sessions, prefs, setPrefs, setSessions, notify } = props;
+  const [chartEx, setChartEx] = useState("");
+
+  const totalVolume = sessions.reduce((n, s) => n + sessionVolume(s), 0);
+  const totalMinutes = sessions.reduce((n, s) => n + s.duration, 0);
+  const totalDistance = sessions.reduce((n, s) => n + s.distance, 0);
+
+  const thisWeekStart = mondayOf(new Date());
+  const weekSessions = sessions.filter((s) => new Date(s.date + "T00:00:00") >= thisWeekStart);
+  const weekMinutes = weekSessions.reduce((n, s) => n + s.duration, 0);
+
+  const practicedNames = new Set(sessions.flatMap((s) => s.exercises.map((e) => e.name.toLowerCase())));
+  const records = useMemo(() => {
+    const map = new Map();
+    for (const s of sessions) {
+      for (const ex of s.exercises) {
+        const key = ex.name.toLowerCase();
+        const rm = best1RM(ex);
+        if (rm <= 0) continue;
+        const prev = map.get(key);
+        if (!prev || rm > prev.rm) map.set(key, { name: ex.name, rm: rm, date: s.date, count: (prev ? prev.count : 0) + 1 });
+        else map.set(key, Object.assign({}, prev, { count: prev.count + 1 }));
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.rm - a.rm).slice(0, 12);
+  }, [sessions]);
+
+  const weeklyVolume = useMemo(() => {
+    const weeks = [];
+    const now = new Date();
+    for (let w = 11; w >= 0; w--) {
+      const start = mondayOf(new Date(now.getTime() - w * 7 * 86400000));
+      const end = new Date(start.getTime() + 7 * 86400000);
+      const inWeek = sessions.filter((s) => {
+        const d = new Date(s.date + "T00:00:00");
+        return d >= start && d < end;
+      });
+      weeks.push({
+        label: start.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
+        volume: Math.round(inWeek.reduce((n, s) => n + sessionVolume(s), 0) / 10) / 100,
+        seances: inWeek.length,
+      });
+    }
+    return weeks;
+  }, [sessions]);
+
+  const history1RM = useMemo(() => {
+    if (!chartEx) return [];
+    const pts = [];
+    for (const s of [...sessions].sort((a, b) => (a.date < b.date ? -1 : 1))) {
+      const ex = s.exercises.find((e) => e.name.toLowerCase() === chartEx.toLowerCase());
+      if (ex) pts.push({ date: fmtShort(s.date), rm: best1RM(ex) });
+    }
+    return pts;
+  }, [chartEx, sessions]);
+
+  function exportCSV() {
+    const rows = [["date", "type", "titre", "duree_min", "rpe", "exercice", "serie", "reps", "charge_kg", "rir"]];
+    for (const s of sessions) {
+      if (s.exercises.length === 0) rows.push([s.date, s.type, s.title, s.duration, s.rpe, "", "", "", "", ""]);
+      s.exercises.forEach((ex, i) => {
+        if (ex.sets.length === 0) rows.push([s.date, s.type, s.title, s.duration, s.rpe, ex.name, i + 1, "", "", ""]);
+        ex.sets.forEach((st, j) => rows.push([
+          s.date, s.type, s.title, s.duration, s.rpe, ex.name, j + 1, st.reps, st.weight, st.rir != null ? st.rir : "",
+        ]));
+      });
+    }
+    const csv = rows.map((r) => r.map((c) => '"' + String(c == null ? "" : c).replace(/"/g, '""') + '"').join(";")).join("\n");
+    downloadFile("carnet-entrainement.csv", csv, "text/csv");
+    notify("✓ Export CSV téléchargé");
+  }
+
+  function exportJSON() {
+    const data = JSON.stringify({ exportedAt: new Date().toISOString(), prefs: prefs, sessions: sessions }, null, 2);
+    downloadFile("carnet-entrainement.json", data, "application/json");
+    notify("✓ Export JSON téléchargé");
+  }
+
+  function downloadFile(name, content, mime) {
+    const blob = new Blob([content], { type: mime + ";charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  function importJSON(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        const list = Array.isArray(parsed) ? parsed : parsed.sessions;
+        if (!Array.isArray(list)) throw new Error("format");
+        const clean = list.filter((s) => s && typeof s.date === "string" && Array.isArray(s.exercises));
+        if (clean.length === 0) throw new Error("vide");
+        setSessions(clean.map((s) => ({
+          id: s.id || Math.random().toString(36).slice(2),
+          date: s.date, type: s.type || "musculation", title: s.title || "Séance",
+          duration: s.duration || 60, rpe: s.rpe || 6,
+          exercises: s.exercises.map((e) => ({
+            name: e.name || "Exercice", muscle: e.muscle || guessMuscle(e.name || ""),
+            sets: (e.sets || []).map((st) => ({
+              reps: st.reps || 0, weight: st.weight || 0, rir: st.rir != null ? st.rir : null, warmup: !!st.warmup,
+            })),
+          })),
+          distance: s.distance || 0, notes: s.notes || "",
+        })));
+        notify("✓ " + clean.length + " séances importées");
+      } catch (e) {
+        notify("❌ Fichier invalide — utilise un export JSON de Gym Buddy Pro");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  const chartNames = useMemo(() =>
+    Array.from(new Set(sessions.flatMap((s) => s.exercises.map((e) => e.name)))).sort(), [sessions]);
+
+  return (
+    <div className="space-y-4">
+      <div className={cardCls}>
+        <h3 className="text-xs font-extrabold uppercase tracking-wider text-emerald-400">📊 Tes statistiques</h3>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-xl bg-slate-900/60 p-3">
+            <div className="text-2xl font-extrabold text-white">{sessions.length}</div>
+            <div className="text-[10px] text-slate-400">séances enregistrées</div>
+          </div>
+          <div className="rounded-xl bg-slate-900/60 p-3">
+            <div className="text-2xl font-extrabold text-white">{(totalVolume / 1000).toFixed(1)} t</div>
+            <div className="text-[10px] text-slate-400">volume total soulevé</div>
+          </div>
+          <div className="rounded-xl bg-slate-900/60 p-3">
+            <div className="text-2xl font-extrabold text-white">{Math.round(totalMinutes / 60)} h</div>
+            <div className="text-[10px] text-slate-400">d'entraînement cumulé</div>
+          </div>
+          <div className="rounded-xl bg-slate-900/60 p-3">
+            <div className="text-2xl font-extrabold text-white">{practicedNames.size}</div>
+            <div className="text-[10px] text-slate-400">exercices différents</div>
+          </div>
+        </div>
+        {totalDistance > 0 && (
+          <p className="mt-2 text-center text-[10px] text-slate-400">{totalDistance.toFixed(1).replace(".", ",")} km de cardio cumulés 🔥</p>
+        )}
+        <div className="mt-3 rounded-xl bg-emerald-500/10 p-3">
+          <div className="flex items-center justify-between text-xs font-bold text-emerald-300">
+            <span>Cette semaine : {weekSessions.length}/{prefs.goalSessions} séances</span>
+            <span>{weekMinutes}/{prefs.goalMinutes} min</span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-700/60">
+            <div className="h-full rounded-full bg-emerald-400" style={{ width: Math.min(100, (weekSessions.length / prefs.goalSessions) * 100) + "%" }} />
+          </div>
+        </div>
+      </div>
+
+      {chartNames.length > 0 && (
+        <div className={cardCls}>
+          <h3 className="text-xs font-extrabold uppercase tracking-wider text-emerald-400">📈 Volume par semaine (tonnes)</h3>
+          <div className="mt-3 h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={weeklyVolume} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 9 }} interval={1} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                <Tooltip contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#fff" }} />
+                <Bar dataKey="volume" fill="#34d399" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {records.length > 0 && (
+        <div className={cardCls}>
+          <h3 className="text-xs font-extrabold uppercase tracking-wider text-emerald-400">🏆 Records (1RM estimé)</h3>
+          <div className="mt-2 space-y-1">
+            {records.map((r, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg bg-slate-900/50 px-3 py-1.5 text-xs">
+                <span className="font-bold text-white">{i === 0 ? "🥇 " : i === 1 ? "🥈 " : i === 2 ? "🥉 " : ""}{r.name}</span>
+                <span className="text-slate-400">
+                  <span className="font-extrabold text-emerald-400">{r.rm} kg</span> · {fmtShort(r.date)} · ×{r.count}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <label htmlFor="chart-ex" className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Progression d'un exercice
+            </label>
+            <select id="chart-ex" value={chartEx} onChange={(e) => setChartEx(e.target.value)} className={inputCls}>
+              <option value="">— Choisir un exercice —</option>
+              {chartNames.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            {chartEx && history1RM.length > 1 && (
+              <div className="mt-2 h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={history1RM} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 9 }} />
+                    <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} domain={["dataMin - 5", "dataMax + 5"]} />
+                    <Tooltip contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#fff" }} />
+                    <Line type="monotone" dataKey="rm" stroke="#34d399" strokeWidth={2.5} dot={{ fill: "#34d399", r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className={cardCls}>
+        <h3 className="text-xs font-extrabold uppercase tracking-wider text-emerald-400">⚙️ Réglages</h3>
+        <div className="mt-3 flex items-center justify-between">
+          <span className="text-xs font-semibold text-slate-300">Repos par défaut</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPrefs((p) => Object.assign({}, p, { restDefault: Math.max(15, p.restDefault - 15) }))}
+              className="h-8 w-8 rounded-lg bg-slate-700 font-bold text-white hover:bg-slate-600">−</button>
+            <span className="w-14 text-center text-sm font-extrabold text-white">{prefs.restDefault} s</span>
+            <button onClick={() => setPrefs((p) => Object.assign({}, p, { restDefault: Math.min(300, p.restDefault + 15) }))}
+              className="h-8 w-8 rounded-lg bg-slate-700 font-bold text-white hover:bg-slate-600">+</button>
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-xs font-semibold text-slate-300">Objectif séances / semaine</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPrefs((p) => Object.assign({}, p, { goalSessions: Math.max(1, p.goalSessions - 1) }))}
+              className="h-8 w-8 rounded-lg bg-slate-700 font-bold text-white hover:bg-slate-600">−</button>
+            <span className="w-8 text-center text-sm font-extrabold text-white">{prefs.goalSessions}</span>
+            <button onClick={() => setPrefs((p) => Object.assign({}, p, { goalSessions: Math.min(7, p.goalSessions + 1) }))}
+              className="h-8 w-8 rounded-lg bg-slate-700 font-bold text-white hover:bg-slate-600">+</button>
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-xs font-semibold text-slate-300">Objectif minutes / semaine</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPrefs((p) => Object.assign({}, p, { goalMinutes: Math.max(30, p.goalMinutes - 30) }))}
+              className="h-8 w-8 rounded-lg bg-slate-700 font-bold text-white hover:bg-slate-600">−</button>
+            <span className="w-12 text-center text-sm font-extrabold text-white">{prefs.goalMinutes}</span>
+            <button onClick={() => setPrefs((p) => Object.assign({}, p, { goalMinutes: Math.min(840, p.goalMinutes + 30) }))}
+              className="h-8 w-8 rounded-lg bg-slate-700 font-bold text-white hover:bg-slate-600">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div className={cardCls}>
+        <h3 className="text-xs font-extrabold uppercase tracking-wider text-emerald-400">💾 Sauvegarde des données</h3>
+        <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+          Tes données sont stockées localement dans ce navigateur. Pense à exporter régulièrement une sauvegarde JSON.
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button onClick={exportJSON} className="rounded-xl bg-emerald-500 px-3 py-3 text-xs font-extrabold text-slate-950 hover:bg-emerald-400">
+            ⬇ Export JSON
+          </button>
+          <button onClick={exportCSV} className="rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-3 py-3 text-xs font-extrabold text-emerald-400 hover:bg-emerald-500/20">
+            ⬇ Export CSV
+          </button>
+        </div>
+        <label className="mt-2 block cursor-pointer rounded-xl border border-slate-600 bg-slate-800 px-3 py-3 text-center text-xs font-extrabold text-slate-200 hover:border-emerald-500 hover:text-emerald-400">
+          ⬆ Importer une sauvegarde JSON
+          <input type="file" accept="application/json,.json" className="hidden"
+            onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) importJSON(f); e.target.value = ""; }} />
+        </label>
+        <button onClick={() => {
+          if (window.confirm("Supprimer TOUTES les séances enregistrées ? Cette action est irréversible.")) {
+            setSessions([]);
+            notify("Toutes les séances ont été supprimées");
+          }
+        }} className="mt-2 w-full rounded-xl border border-red-500/40 px-3 py-2.5 text-xs font-bold text-red-400 hover:bg-red-500/10">
+          🗑 Effacer toutes les données
+        </button>
+      </div>
+
+      <p className="pb-2 text-center text-[10px] text-slate-600">Gym Buddy Pro · carnet d'entraînement personnel · v2</p>
+    </div>
+  );
+}
+
+/* ============================ Montage ============================ */
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
