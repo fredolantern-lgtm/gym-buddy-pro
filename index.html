@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gym Buddy Pro</title>
+<style>html,body{margin:0;height:100%;background:#020617}iframe{border:0;width:100%;height:100%;display:block}#m{color:#94a3b8;font-family:sans-serif;padding:2rem}</style>
+</head>
+<body>
+<div id="m">Chargement de Gym Buddy Pro…</div>
+<script>
+fetch("https://raw.githubusercontent.com/fredolantern-lgtm/gym-buddy-pro/main/gym-buddy-pro%20%281%29.html")
+.then(function (r) { return r.text(); })
+.then(function (t) {
+document.body.innerHTML = "";
+var f = document.createElement("iframe");
+f.srcdoc = t.replace("Recharts.production.min.js", "Recharts.js");
+document.body.appendChild(f);
+})
+.catch(function (e) { document.getElementById("m").textContent = "Erreur : " + e; });
+</script>
+</body>
+</html>
